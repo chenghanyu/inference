@@ -1,0 +1,116 @@
+---
+title: 'Statistical Inference Course Project: Part 2'
+author: "Cheng-Han Yu"
+date: "July 17, 2015"
+output: pdf_document
+---
+
+## Data analysis
+We're going to analyze the ToothGrowth data in the R datasets package. 
+
+**1. Load the ToothGrowth data and perform some basic exploratory data analyses **
+
+***Solution***
+```{r}
+library(datasets)
+data(ToothGrowth)
+tooth <- ToothGrowth
+str(tooth) # check structure
+tooth$dose <- factor(tooth$dose) # convert class of dose into factor
+head(tooth) 
+```
+The dataset contains 60 observations and three variables where the response is the tooth length in each of 10 guinea pigs at each of three dose levels of Vitamin C (0.5, 1, and 2 mg) with each of two delivery methods (orange juice (OJ) or ascorbic acid (VC)). Some boxplots are shown below to explore the relationship between tooth length and supplement type and dose level before doing any inference. We can see that dose level affects tooth growth significantly no matter which type of supplement were used. Using orange juice tends to have longer teeth, especially when dose level is low. When dose level is 2mg, two types of supplement do not have much differnece for tooth growth.
+
+```{r, fig.height=2.5, fig.width=5}
+library(ggplot2)
+ggplot(tooth, aes(supp, len, fill = supp)) + geom_boxplot()
+ggplot(tooth, aes(dose, len, fill = dose)) + geom_boxplot()
+ggplot(aes(y = len, x = supp, fill = dose), data = tooth) + geom_boxplot()
+ggplot(aes(y = len, x = dose, fill = supp), data = tooth) + geom_boxplot()
+```
+
+**2. Provide a basic summary of the data.**
+
+***Solution***
+
+Some basic decriptive satstistics summaries for the variable `len` are shown below. 
+```{r, message=FALSE}
+library(psych)
+describe(tooth$len)[-c(1, 6, 7)]
+describe(tooth[tooth$supp == "VC", ]$len)[-c(1, 6, 7)]
+describe(tooth[tooth$supp == "OJ", ]$len)[-c(1, 6, 7)]
+describe(tooth[tooth$dose == "0.5", ]$len)[-c(1, 6, 7)]
+describe(tooth[tooth$dose == "1", ]$len)[-c(1, 6, 7)]
+describe(tooth[tooth$dose == "2", ]$len)[-c(1, 6, 7)] 
+```
+
+**3. Use confidence intervals and/or hypothesis tests to compare tooth growth by supp and dose.**
+
+***Solution***
+
+```{r}
+# len vs supp
+t.test(tooth$len ~ tooth$supp, alternative = "two.sided", 
+       paired = FALSE, var.equal = FALSE, conf.level = 0.95) # Don not reject null
+
+# len vs dose
+t.test(x = tooth[tooth$dose == "0.5", ]$len,
+       y = tooth[tooth$dose == "1", ]$len, alternative = "less", 
+       paired = FALSE, var.equal = FALSE, conf.level = 0.95) # reject null
+t.test(x = tooth[tooth$dose == "0.5", ]$len,
+       y = tooth[tooth$dose == "2", ]$len, alternative = "less", 
+       paired = FALSE, var.equal = FALSE, conf.level = 0.95) # reject null
+t.test(x = tooth[tooth$dose == "1", ]$len,
+       y = tooth[tooth$dose == "2", ]$len, alternative = "less", 
+       paired = FALSE, var.equal = FALSE, conf.level = 0.95) # reject null
+
+# all 15 testings including bonferroni and FDR corrections
+m <- choose(6, 2)
+df <- data.frame(pvalue = 1:m, compare = 1:m, lower = 1:m, upper = 1:m)
+supp_dose <- interaction(rep(c("VC", "OJ"), each = 3), rep(c("0.5", "1", "2")))
+k <- 1
+for (i in 1:5) {
+    for (j in (i+1):6) {
+        result <- t.test(x = tooth[(10*(i-1) + (1:10)), ]$len, 
+                         y = tooth[(10*(j-1) + (1:10)), ]$len,
+                         alternative = "two.sided",
+                         paired = FALSE, var.equal = FALSE)
+        df$pvalue[k] <- result$p.value
+        df$lower[k] <- round(result$conf.int[1], 3)
+        df$upper[k] <- round(result$conf.int[2], 3)
+        df$compare[k] <- paste(supp_dose[i], "vs", supp_dose[j])
+        k <- k + 1
+    }
+}
+df$pBon <- p.adjust(df$pvalue, method = "bonferroni")
+df$pBH <- p.adjust(df$pvalue, method = "BH")
+df$sig <- as.numeric(df$pvalue < 0.05)
+df$sigBon <- as.numeric(df$pBon < 0.05)
+df$sigBH <- as.numeric(df$pBH < 0.05)
+cbind(round(df[, -2], 4), df$compare)
+```
+
+I use two sample t test to compare tooth growth by supp and dose. From the exploratory analysis and descriptive statistics in problem 1 and 2, I assume any two samples are independent, and their variances are not equal. All testings are using significant level $\alpha = 0.05$. 
+
+I first test if the mean lengths of teeth under two supplement types are different. The result shows that the p-value = 0.06 > 0.05 and the confidence interval includes zero, and so under $\alpha = 0.05$ using OJ or VC does not have significant difference for teeth growth. 
+
+I then compare tooth growth by dose. Since we are interested in if a higher dose level leads to longer teeth, I use one-sided test instead. Results above show that teeth lengths are statistically different under different dose levels.
+
+Finally, to get more information about how `len` are related to `supp` and `dose`. I test all 15 different comparisons by supp and dose. If we don't do any correction, variable `pvalue`, confidence interval `lower` and `upper` and variable `sig` show that all paired comparisons are significant except two cases: `VC.2 vs OJ.1` and `VC.2 vs OJ.2`, i.e., VC with dose level 2mg vs OJ with dose level 1mg and VC with dose level 2mg vs OJ with dose level 2mg. If we use bonferroni correction, which is the most conservative one, we have three more insignificant results: `VC.0.5 vs OJ.0.5`, `VC.1 vs OJ.0.5`, and `OJ.1 vs OJ.2` by checking variable `pBon` and `sigBon`. If we use FDR correction with `method = "BH"`, only one more comparison `VC.1 vs OJ.0.5` is insignificant, as shown in `sigBH`.
+
+**4. State your conclusions and the assumptions needed for your conclusions. **
+
+***Solution***
+
+Both confidence interval and hypothesis tesing suggest that dose level affects tooth growth, regardless of supplement types. Also, in general, using OJ makes teeth grows faster than using VC, althogh these two effects are similar when dose level is 2mg. This analysis is under assumptions that 
+
+* Those guinea pigs are randomly assigned to different types and dose levels, and hence any two subsamples for comparision are independent.
+* The variances of subpopulations are unequal.
+* Any sampling distribution is Student-t.
+* The significant level is set at 0.05.
+
+
+
+
+
+
